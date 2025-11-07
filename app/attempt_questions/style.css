@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  /* Override primary and success for attempt page */
+  --color-primary: #005A9C;
+  --color-success: #1E8449;
+}
