@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Prevent zoom on initial load */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  zoom: 1;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+}
+
 @theme {
   /* Primary Colors */
   --color-primary: #4A90E2;

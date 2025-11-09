@@ -1,16 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import "./style.css";
+import { getUser, logout } from '@/lib/auth';
 
 export default function DashboardPage() {
+  const [user, setUser] = useState<any>(null);
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const handleLogout = () => {
-    router.push("/login");
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const data = await getUser();
+        setUser(data);
+      } catch {
+        router.push('/login'); // if token invalid, redirect
+      }
+    }
+    fetchUser();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/login');
+    } catch (error) {
+      alert('Something went wrong during logout.');
+    }
   };
 
   const quizzes = [
@@ -109,6 +128,15 @@ export default function DashboardPage() {
               <span className="material-symbols-outlined">settings</span>
               <p className="text-sm font-medium">Settings</p>
             </Link>
+            {user?.role === 'admin' && (
+              <Link
+                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors border-t border-border-light mt-2 pt-2"
+                href="/admin"
+              >
+                <span className="material-symbols-outlined">admin_panel_settings</span>
+                <p className="text-sm font-medium">Admin Panel</p>
+              </Link>
+            )}
           </nav>
           <div className="flex items-center gap-3 px-2 pt-4 border-t border-border-light">
             <div
@@ -120,12 +148,14 @@ export default function DashboardPage() {
               }}
             ></div>
             <div className="flex flex-col">
-              <h2 className="text-sm font-medium text-text-light">Alex Johnson</h2>
-              <p className="text-xs text-text-light/70 ">alex.j@email.com</p>
+              <h2 className="text-sm font-medium text-text-light">
+                {user?.name}
+                </h2>
+              <p className="text-xs text-text-light/70 ">{user?.email}</p>
             </div>
             <button 
               onClick={handleLogout}
-              className="ml-auto text-text-light/70  hover:text-primary transition-colors cursor-pointer"
+              className="logout-button ml-auto text-text-light/70  hover:text-primary transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined">logout</span>
             </button>

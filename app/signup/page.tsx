@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import "./style.css";
+import { registerUser } from "@/lib/auth";
 
 interface ParticleStyle {
   left: string;
@@ -25,6 +26,7 @@ export default function SignupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [particleStyles, setParticleStyles] = useState<ParticleStyle[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Generate particle styles only on client side to avoid hydration mismatch
   useEffect(() => {
@@ -42,24 +44,59 @@ export default function SignupPage() {
       ...formData,
       [e.target.name]: e.target.value,
     });
+    // Clear error message when user starts typing
+    if (errorMessage) setErrorMessage(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match!");
+      setErrorMessage("Passwords do not match!");
       return;
     }
 
     setIsLoading(true);
-    
-    // Simulate signup process
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Redirect to dashboard after successful signup
-    router.push("/dashboard");
+    setErrorMessage(null);
+
+    try {
+      const result = await registerUser(formData.name, formData.email, formData.password);
+      console.log("✅ Registered successfully:", result);
+      alert("Account created successfully! Please check your email for verification link.");
+      router.push("/login");
+    } catch (error: any) {
+      console.error("❌ Registration failed:", error);
+  
+      // Handle Laravel validation errors
+      if (error.response?.status === 422) {
+        const errors = error.response.data.errors;
+  
+        if (errors?.email) {
+          setErrorMessage(errors.email[0]); // e.g. "The email has already been taken."
+        } else if (errors?.password) {
+          setErrorMessage(errors.password[0]);
+        } else if (errors?.name) {
+          setErrorMessage(errors.name[0]);
+        } else {
+          setErrorMessage(error.response.data.message || "Validation error occurred.");
+        }
+      } else {
+        setErrorMessage("Something went wrong. Please try again later.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Auto-dismiss error message after 5 seconds
+  useEffect(() => {
+    if (errorMessage) {
+      const timer = setTimeout(() => {
+        setErrorMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMessage]);
 
   return (
     <div className="signup-container">
@@ -122,20 +159,41 @@ export default function SignupPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          {/* Animated Error Message */}
+          {errorMessage && (
+            <div className="error-message-container">
+              <div className="error-message">
+                <span className="material-symbols-outlined error-icon">error</span>
+                <span className="error-text">{errorMessage}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Name Field */}
           <div className="form-group">
             <div className="input-wrapper">
               <input
                 type="text"
                 id="name"
                 name="name"
-                className={`form-input ${formData.name ? "has-value" : ""} ${focusedField === "name" ? "focused" : ""}`}
+                className={`form-input ${formData.name ? 'has-value' : ''} ${
+                  focusedField === 'name' ? 'focused' : ''
+                }`}
                 value={formData.name}
                 onChange={handleChange}
-                onFocus={() => setFocusedField("name")}
+                onFocus={() => {
+                  setFocusedField('name');
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 onBlur={() => setFocusedField(null)}
                 required
               />
-              <label htmlFor="name" className={`floating-label ${formData.name || focusedField === "name" ? "active" : ""}`}>
+              <label
+                htmlFor="name"
+                className={`floating-label ${
+                  formData.name || focusedField === 'name' ? 'active' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined label-icon">person</span>
                 <span className="label-text">Full Name</span>
               </label>
@@ -144,20 +202,31 @@ export default function SignupPage() {
             </div>
           </div>
 
+          {/* Email Field */}
           <div className="form-group">
             <div className="input-wrapper">
               <input
                 type="email"
                 id="email"
                 name="email"
-                className={`form-input ${formData.email ? "has-value" : ""} ${focusedField === "email" ? "focused" : ""}`}
+                className={`form-input ${formData.email ? 'has-value' : ''} ${
+                  focusedField === 'email' ? 'focused' : ''
+                }`}
                 value={formData.email}
                 onChange={handleChange}
-                onFocus={() => setFocusedField("email")}
+                onFocus={() => {
+                  setFocusedField('email');
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 onBlur={() => setFocusedField(null)}
                 required
               />
-              <label htmlFor="email" className={`floating-label ${formData.email || focusedField === "email" ? "active" : ""}`}>
+              <label
+                htmlFor="email"
+                className={`floating-label ${
+                  formData.email || focusedField === 'email' ? 'active' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined label-icon">email</span>
                 <span className="label-text">Email Address</span>
               </label>
@@ -166,21 +235,32 @@ export default function SignupPage() {
             </div>
           </div>
 
+          {/* Password Field */}
           <div className="form-group">
             <div className="input-wrapper">
               <input
-                type={showPassword ? "text" : "password"}
+                type={showPassword ? 'text' : 'password'}
                 id="password"
                 name="password"
-                className={`form-input ${formData.password ? "has-value" : ""} ${focusedField === "password" ? "focused" : ""}`}
+                className={`form-input ${formData.password ? 'has-value' : ''} ${
+                  focusedField === 'password' ? 'focused' : ''
+                }`}
                 value={formData.password}
                 onChange={handleChange}
-                onFocus={() => setFocusedField("password")}
+                onFocus={() => {
+                  setFocusedField('password');
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 onBlur={() => setFocusedField(null)}
                 required
                 minLength={6}
               />
-              <label htmlFor="password" className={`floating-label ${formData.password || focusedField === "password" ? "active" : ""}`}>
+              <label
+                htmlFor="password"
+                className={`floating-label ${
+                  formData.password || focusedField === 'password' ? 'active' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined label-icon">lock</span>
                 <span className="label-text">Password</span>
               </label>
@@ -193,27 +273,38 @@ export default function SignupPage() {
                 tabIndex={-1}
               >
                 <span className="material-symbols-outlined">
-                  {showPassword ? "visibility_off" : "visibility"}
+                  {showPassword ? 'visibility_off' : 'visibility'}
                 </span>
               </button>
             </div>
             <p className="form-hint">Must be at least 6 characters</p>
           </div>
 
+          {/* Confirm Password Field */}
           <div className="form-group">
             <div className="input-wrapper">
               <input
-                type={showConfirmPassword ? "text" : "password"}
+                type={showConfirmPassword ? 'text' : 'password'}
                 id="confirmPassword"
                 name="confirmPassword"
-                className={`form-input ${formData.confirmPassword ? "has-value" : ""} ${focusedField === "confirmPassword" ? "focused" : ""}`}
+                className={`form-input ${formData.confirmPassword ? 'has-value' : ''} ${
+                  focusedField === 'confirmPassword' ? 'focused' : ''
+                }`}
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                onFocus={() => setFocusedField("confirmPassword")}
+                onFocus={() => {
+                  setFocusedField('confirmPassword');
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 onBlur={() => setFocusedField(null)}
                 required
               />
-              <label htmlFor="confirmPassword" className={`floating-label ${formData.confirmPassword || focusedField === "confirmPassword" ? "active" : ""}`}>
+              <label
+                htmlFor="confirmPassword"
+                className={`floating-label ${
+                  formData.confirmPassword || focusedField === 'confirmPassword' ? 'active' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined label-icon">lock</span>
                 <span className="label-text">Confirm Password</span>
               </label>
@@ -226,7 +317,7 @@ export default function SignupPage() {
                 tabIndex={-1}
               >
                 <span className="material-symbols-outlined">
-                  {showConfirmPassword ? "visibility_off" : "visibility"}
+                  {showConfirmPassword ? 'visibility_off' : 'visibility'}
                 </span>
               </button>
             </div>
@@ -236,7 +327,7 @@ export default function SignupPage() {
             <label className="terms-checkbox">
               <input type="checkbox" required />
               <span>
-                I agree to the{" "}
+                I agree to the{' '}
                 <Link href="#" className="terms-link">
                   Terms & Conditions
                 </Link>
@@ -244,11 +335,7 @@ export default function SignupPage() {
             </label>
           </div>
 
-          <button
-            type="submit"
-            className={`submit-button ${isLoading ? "loading" : ""}`}
-            disabled={isLoading}
-          >
+          <button type="submit" className={`submit-button ${isLoading ? 'loading' : ''}`} disabled={isLoading}>
             {isLoading ? (
               <>
                 <span className="material-symbols-outlined spin">refresh</span>
@@ -265,7 +352,7 @@ export default function SignupPage() {
 
         <div className="auth-footer">
           <p>
-            Already have an account?{" "}
+            Already have an account?{' '}
             <Link href="/login" className="auth-link">
               Sign In
             </Link>
@@ -275,4 +362,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
