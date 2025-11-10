@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import AdminLayout from "@/components/AdminLayout";
 import { examsApi, importsApi } from "@/lib/admin";
+import { useRouter } from "next/navigation";
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState({
     totalExams: 0,
     totalPapers: 0,
@@ -16,6 +18,20 @@ export default function AdminDashboardPage() {
   const [recentImports, setRecentImports] = useState<any[]>([]);
 
   useEffect(() => {
+    // ✅ Step 1: Check if user is admin
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) {
+      router.push("/login");
+      return;
+    }
+
+    const user = JSON.parse(storedUser);
+    if (!user.is_admin) {
+      router.push("/dashboard"); // redirect students
+      return;
+    }
+
+    // ✅ Step 2: Fetch admin dashboard stats
     async function fetchStats() {
       try {
         const [exams, imports] = await Promise.all([
@@ -23,9 +39,20 @@ export default function AdminDashboardPage() {
           importsApi.getAll().catch(() => []),
         ]);
 
-        const totalPapers = exams.reduce((sum: number, exam: any) => sum + (exam.papers_count || 0), 0);
-        const totalQuestions = exams.reduce((sum: number, exam: any) => 
-          sum + (exam.papers?.reduce((pSum: number, paper: any) => pSum + (paper.questions_count || 0), 0) || 0), 0
+        const totalPapers = exams.reduce(
+          (sum: number, exam: any) => sum + (exam.papers_count || 0),
+          0
+        );
+
+        const totalQuestions = exams.reduce(
+          (sum: number, exam: any) =>
+            sum +
+              (exam.papers?.reduce(
+                (pSum: number, paper: any) =>
+                  pSum + (paper.questions_count || 0),
+                0
+              ) || 0),
+          0
         );
 
         setStats({
@@ -42,8 +69,9 @@ export default function AdminDashboardPage() {
         setLoading(false);
       }
     }
+
     fetchStats();
-  }, []);
+  }, [router]);
 
   const quickActions = [
     {

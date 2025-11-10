@@ -155,18 +155,19 @@ export default function LoginPage() {
   
     if (isLoading) return;
     setIsLoading(true);
-    setErrorMessage(''); // clear old error
+    setErrorMessage('');
   
     try {
-      // 1️⃣ Send credentials to Laravel API
+      // 1️⃣ Login to backend
       const result = await loginUser(email, password);
       console.log('✅ Login successful:', result);
   
-      // 2️⃣ Get logged-in user info (now Sanctum has session)
-      const user = await getUser();
+      // 2️⃣ Store token and user
+      localStorage.setItem('token', result.access_token);
+      localStorage.setItem('user', JSON.stringify(result.user));
   
       // 3️⃣ Redirect based on role
-      if (user?.is_admin) {
+      if (result.user?.is_admin) {
         router.push('/admin');
       } else {
         router.push('/dashboard');
@@ -175,14 +176,17 @@ export default function LoginPage() {
       console.error('❌ Login failed:', error);
   
       if (error.response?.status === 401) {
-        setErrorMessage('Invalid email or password. Please try again.');
+        setErrorMessage('Invalid email or password.');
+      } else if (error.response?.status === 403) {
+        setErrorMessage('Please verify your email before logging in.');
       } else {
-        setErrorMessage('Something went wrong. Please check your connection.');
+        setErrorMessage('Something went wrong. Please try again.');
       }
     } finally {
       setIsLoading(false);
     }
   };
+  
   
 
   // Auto-dismiss error message after 5 seconds
