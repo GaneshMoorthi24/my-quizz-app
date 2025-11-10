@@ -26,7 +26,18 @@ export default function AdminDashboardPage() {
     }
 
     const user = JSON.parse(storedUser);
-    if (!user.is_admin) {
+    // Check for admin status - handle both is_admin (1, true, '1') and role === 'admin'
+    const isAdmin = user?.is_admin === 1 || 
+                   user?.is_admin === true || 
+                   user?.is_admin === '1' ||
+                   user?.role === 'admin';
+    
+    console.log('Admin page - User check:', user);
+    console.log('Admin page - is_admin:', user?.is_admin, 'Type:', typeof user?.is_admin);
+    console.log('Admin page - Is admin?', isAdmin);
+    
+    if (!isAdmin) {
+      console.log('Admin page - User is not admin, redirecting to dashboard');
       router.push("/dashboard"); // redirect students
       return;
     }

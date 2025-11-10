@@ -45,7 +45,7 @@ export default function PaperUploadPage() {
 
     setUploading(true);
     try {
-      const result = await uploadApi.uploadPDF(paperId, file);
+      const result = await uploadApi.uploadPDF(paperId, file, paper?.year, paper?.title);
       setUploadId(result.upload_id);
       // Automatically start parsing
       handleParse(result.upload_id);

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import AdminLayout from "@/components/AdminLayout";
-import { examsApi, papersApi } from "@/lib/admin";
+import { examsApi, papersApi, questionsApi } from "@/lib/admin";
 
 export default function ExamDetailPage() {
   const params = useParams();
@@ -30,10 +30,46 @@ export default function ExamDetailPage() {
         examsApi.getById(examId),
         papersApi.getByExam(examId),
       ]);
+      
+      console.log('Exam data:', examData);
+      console.log('Papers data:', papersData);
+      console.log('Number of papers:', papersData?.length);
+      
       setExam(examData);
-      setPapers(papersData);
+      
+      // Fetch question counts for each paper if not included
+      const papersWithCounts = await Promise.all(
+        papersData.map(async (paper: any) => {
+          try {
+            // If questions_count is already included, use it
+            if (paper.questions_count !== undefined && paper.questions_count !== null) {
+              console.log(`Paper ${paper.id} (${paper.title}) already has count:`, paper.questions_count);
+              return paper;
+            }
+            // Otherwise, fetch questions to count them
+            console.log(`Fetching questions for paper ${paper.id} (${paper.title})...`);
+            const questions = await questionsApi.getByPaper(paper.id);
+            const count = questions?.length || 0;
+            console.log(`Paper ${paper.id} (${paper.title}) has ${count} questions`);
+            return {
+              ...paper,
+              questions_count: count,
+            };
+          } catch (error) {
+            console.error(`Failed to fetch questions for paper ${paper.id}:`, error);
+            return {
+              ...paper,
+              questions_count: 0,
+            };
+          }
+        })
+      );
+      
+      console.log('Papers with counts:', papersWithCounts);
+      setPapers(papersWithCounts);
     } catch (error) {
       console.error("Failed to fetch data:", error);
+      alert("Failed to load exam data. Please refresh the page.");
     } finally {
       setLoading(false);
     }
@@ -140,8 +176,20 @@ export default function ExamDetailPage() {
                   </div>
                   <span className="material-symbols-outlined text-secondary text-2xl">description</span>
                 </div>
-                <div className="flex items-center justify-between text-sm text-text-light/70 mb-4">
-                  <span>{paper.questions_count || 0} Questions</span>
+                <div className="flex items-center justify-between text-sm mb-4">
+                  <span className={`font-medium ${
+                    (paper.questions_count || 0) > 0 
+                      ? 'text-secondary' 
+                      : 'text-text-light/70'
+                  }`}>
+                    {paper.questions_count || 0} {paper.questions_count === 1 ? 'Question' : 'Questions'}
+                  </span>
+                  {paper.file_path && (
+                    <span className="text-xs text-primary flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">description</span>
+                      PDF Uploaded
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Link

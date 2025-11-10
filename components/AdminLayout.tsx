@@ -28,6 +28,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         console.log('Fetching user data...');
         const data = await getUser();
         console.log('User data:', data);
+        console.log('is_admin value:', data?.is_admin, 'Type:', typeof data?.is_admin);
+        console.log('role value:', data?.role);
         
         if (!data) {
           console.log('No user data returned, redirecting to login');
@@ -35,8 +37,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           return;
         }
 
-        if (data?.role !== 'admin') {
-          console.log('User is not admin, redirecting to dashboard. Role:', data?.role);
+        // Check for admin status - handle both is_admin (1, true, '1') and role === 'admin'
+        const isAdmin = data?.is_admin === 1 || 
+                       data?.is_admin === true || 
+                       data?.is_admin === '1' ||
+                       data?.role === 'admin';
+        
+        console.log('Is admin?', isAdmin);
+        
+        if (!isAdmin) {
+          console.log('User is not admin, redirecting to dashboard. is_admin:', data?.is_admin, 'role:', data?.role);
           router.push('/dashboard');
           return;
         }

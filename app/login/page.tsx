@@ -64,7 +64,28 @@ export default function LoginPage() {
       const credential = response.credential || response;
       const result = await loginWithGoogle(credential);
       console.log('✅ Google login successful:', result);
-      router.push('/dashboard');
+      console.log('User data:', result.user);
+      
+      // Store token and user
+      if (result.user) {
+        localStorage.setItem('user', JSON.stringify(result.user));
+      }
+      
+      // Check for admin status and redirect accordingly
+      const isAdmin = result.user?.is_admin === 1 || 
+                     result.user?.is_admin === true || 
+                     result.user?.is_admin === '1' ||
+                     result.user?.role === 'admin';
+      
+      console.log('Is admin?', isAdmin);
+      
+      if (isAdmin) {
+        console.log('Redirecting to /admin');
+        router.push('/admin');
+      } else {
+        console.log('Redirecting to /dashboard');
+        router.push('/dashboard');
+      }
     } catch (error: any) {
       console.error('❌ Google login failed:', error);
       if (error.response?.status === 401 || error.response?.status === 422) {
@@ -161,15 +182,27 @@ export default function LoginPage() {
       // 1️⃣ Login to backend
       const result = await loginUser(email, password);
       console.log('✅ Login successful:', result);
+      console.log('User data:', result.user);
+      console.log('is_admin value:', result.user?.is_admin, 'Type:', typeof result.user?.is_admin);
   
       // 2️⃣ Store token and user
       localStorage.setItem('token', result.access_token);
       localStorage.setItem('user', JSON.stringify(result.user));
   
-      // 3️⃣ Redirect based on role
-      if (result.user?.is_admin) {
+      // 3️⃣ Redirect based on admin status
+      // Check for is_admin (can be 1, true, or '1') or role === 'admin'
+      const isAdmin = result.user?.is_admin === 1 || 
+                     result.user?.is_admin === true || 
+                     result.user?.is_admin === '1' ||
+                     result.user?.role === 'admin';
+      
+      console.log('Is admin?', isAdmin);
+      
+      if (isAdmin) {
+        console.log('Redirecting to /admin');
         router.push('/admin');
       } else {
+        console.log('Redirecting to /dashboard');
         router.push('/dashboard');
       }
     } catch (error: any) {
