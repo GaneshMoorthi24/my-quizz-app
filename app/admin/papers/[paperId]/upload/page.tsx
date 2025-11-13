@@ -17,6 +17,7 @@ export default function PaperUploadPage() {
   const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
   const [reviewing, setReviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [language, setLanguage] = useState<'english' | 'tamil'>('english');
 
   useEffect(() => {
     fetchPaper();
@@ -63,26 +64,73 @@ export default function PaperUploadPage() {
 
     setParsing(true);
     try {
-      const result = await uploadApi.parsePDF(paperId, parseId);
+      const result = await uploadApi.parsePDF(paperId, parseId, language);
+      
+      // Debug: Log parsing result
+      console.log('PDF Parsing Result:', result);
+      if (result.debug_data) {
+        console.log('Parsed Questions:', result.debug_data);
+        console.log('Questions Count:', result.questions_count);
+      }
+      
       // Fetch parsed questions
-      const questions = await uploadApi.getParsedQuestions(paperId, parseId);
-      setParsedQuestions(questions);
+      const response = await uploadApi.getParsedQuestions(paperId, parseId);
+      
+      // Handle different response formats
+      let questions: any[] = [];
+      if (Array.isArray(response)) {
+        questions = response;
+      } else if (response && Array.isArray(response.questions)) {
+        questions = response.questions;
+      } else if (response && typeof response === 'object') {
+        // If response is an object but not an array, it might be an error message
+        questions = [];
+      }
+      
+      // Ensure questions is always an array
+      if (!Array.isArray(questions)) {
+        questions = [];
+      }
+      
+      // If no questions parsed, show message and allow manual entry
+      if (questions.length === 0) {
+        alert("PDF parsing completed but no questions were extracted. You can manually add questions below.");
+        // Initialize with one empty question for manual entry
+        setParsedQuestions([{
+          question_text: "",
+          options: { A: "", B: "", C: "", D: "" },
+          correct_answer: "",
+          explanation: "",
+        }]);
+      } else {
+        setParsedQuestions(questions);
+      }
       setReviewing(true);
     } catch (error) {
       console.error("Failed to parse PDF:", error);
-      alert("Failed to parse PDF. Please try again.");
+      alert("Failed to parse PDF. You can still manually add questions.");
+      // Allow manual entry even if parsing fails
+      setParsedQuestions([{
+        question_text: "",
+        options: { A: "", B: "", C: "", D: "" },
+        correct_answer: "",
+        explanation: "",
+      }]);
+      setReviewing(true);
     } finally {
       setParsing(false);
     }
   };
 
   const handleQuestionEdit = (index: number, field: string, value: any) => {
+    if (!Array.isArray(parsedQuestions)) return;
     const updated = [...parsedQuestions];
     updated[index] = { ...updated[index], [field]: value };
     setParsedQuestions(updated);
   };
 
   const handleOptionEdit = (questionIndex: number, optionKey: string, value: string) => {
+    if (!Array.isArray(parsedQuestions)) return;
     const updated = [...parsedQuestions];
     updated[questionIndex].options = {
       ...updated[questionIndex].options,
@@ -93,6 +141,12 @@ export default function PaperUploadPage() {
 
   const handleSave = async () => {
     if (!uploadId) return;
+    
+    // Ensure parsedQuestions is an array
+    if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
+      alert("Please add at least one question before saving.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -148,6 +202,39 @@ export default function PaperUploadPage() {
                 )}
               </div>
 
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-text-light mb-2">
+                  Extract Language
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="language"
+                      value="english"
+                      checked={language === 'english'}
+                      onChange={(e) => setLanguage(e.target.value as 'english' | 'tamil')}
+                      className="w-4 h-4 text-primary focus:ring-primary"
+                    />
+                    <span className="text-text-light">English</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="language"
+                      value="tamil"
+                      checked={language === 'tamil'}
+                      onChange={(e) => setLanguage(e.target.value as 'english' | 'tamil')}
+                      className="w-4 h-4 text-primary focus:ring-primary"
+                    />
+                    <span className="text-text-light">Tamil (தமிழ்)</span>
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-text-light/70">
+                  Select which language to extract from bilingual PDFs
+                </p>
+              </div>
+
               <div className="flex gap-2">
                 <button
                   onClick={handleUpload}
@@ -178,7 +265,7 @@ export default function PaperUploadPage() {
             <div className="bg-card-light p-6 rounded-xl border border-border-light">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-text-light">
-                  Review Parsed Questions ({parsedQuestions.length})
+                  Review Parsed Questions ({Array.isArray(parsedQuestions) ? parsedQuestions.length : 0})
                 </h2>
                 <button
                   onClick={handleSave}
@@ -189,12 +276,47 @@ export default function PaperUploadPage() {
                 </button>
               </div>
               <p className="text-sm text-text-light/70">
-                Review and correct the parsed questions before saving
+                Review and correct the parsed questions before saving. If no questions were parsed, you can add them manually.
               </p>
+              <button
+                onClick={() => {
+                  const current = Array.isArray(parsedQuestions) ? parsedQuestions : [];
+                  setParsedQuestions([
+                    ...current,
+                    {
+                      question_text: "",
+                      options: { A: "", B: "", C: "", D: "" },
+                      correct_answer: "",
+                      explanation: "",
+                    }
+                  ]);
+                }}
+                className="mt-2 px-3 py-1 text-sm bg-secondary/10 text-secondary rounded hover:bg-secondary/20 transition-colors"
+              >
+                + Add Another Question
+              </button>
             </div>
 
-            <div className="space-y-4">
-              {parsedQuestions.map((question, index) => (
+            {!Array.isArray(parsedQuestions) || parsedQuestions.length === 0 ? (
+              <div className="bg-card-light p-6 rounded-xl border border-border-light text-center">
+                <p className="text-text-light/70 mb-4">No questions to review. Add questions manually below.</p>
+                <button
+                  onClick={() => {
+                    setParsedQuestions([{
+                      question_text: "",
+                      options: { A: "", B: "", C: "", D: "" },
+                      correct_answer: "",
+                      explanation: "",
+                    }]);
+                  }}
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Add Question
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {Array.isArray(parsedQuestions) && parsedQuestions.map((question, index) => (
                 <div
                   key={index}
                   className="bg-card-light p-6 rounded-xl border border-border-light"
@@ -250,22 +372,32 @@ export default function PaperUploadPage() {
                     </select>
                   </div>
 
-                  {question.explanation && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-text-light mb-2">
-                        Explanation (Optional)
-                      </label>
-                      <textarea
-                        value={question.explanation || ""}
-                        onChange={(e) => handleQuestionEdit(index, "explanation", e.target.value)}
-                        className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                        rows={2}
-                      />
-                    </div>
-                  )}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-text-light mb-2">
+                      Explanation (Optional)
+                    </label>
+                    <textarea
+                      value={question.explanation || ""}
+                      onChange={(e) => handleQuestionEdit(index, "explanation", e.target.value)}
+                      className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      rows={2}
+                      placeholder="Add explanation for the correct answer..."
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (!Array.isArray(parsedQuestions)) return;
+                      const updated = parsedQuestions.filter((_, i) => i !== index);
+                      setParsedQuestions(updated);
+                    }}
+                    className="text-error hover:text-error/80 text-sm"
+                  >
+                    Remove Question
+                  </button>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
