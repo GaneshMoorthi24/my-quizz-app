@@ -1,20 +1,74 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import "./style.css";
+import { getPaperQuestions, submitAnswers } from "@/lib/api";
+
+type Question = {
+  id: number;
+  question_text: string;
+  type: string;
+  marks: number;
+  options: { [key: string]: string };
+  correct_answer: string | null;
+};
 
 export default function AttemptQuestionsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const paperId = searchParams.get("paperId");
+  
+  const [paper, setPaper] = useState<any>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<{ [key: number]: string }>({});
+  const [reviewed, setReviewed] = useState<{ [key: number]: boolean }>({});
+  const [visited, setVisited] = useState<{ [key: number]: boolean }>({});
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
   const [hours, setHours] = useState(1);
   const [minutes, setMinutes] = useState(29);
   const [seconds, setSeconds] = useState(59);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [currentQuestion, setCurrentQuestion] = useState(25);
-  const [isPaused, setIsPaused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Fetch questions on mount
+  useEffect(() => {
+    if (!paperId) {
+      alert("No paper ID provided");
+      router.push("/dashboard");
+      return;
+    }
+    fetchQuestions();
+  }, [paperId]);
+
+  async function fetchQuestions() {
+    try {
+      setLoading(true);
+      const data = await getPaperQuestions(paperId!);
+      setPaper(data.paper);
+      setQuestions(data.questions || []);
+      
+      // Initialize answers object
+      const initialAnswers: { [key: number]: string } = {};
+      data.questions?.forEach((q: Question) => {
+        initialAnswers[q.id] = "";
+      });
+      setAnswers(initialAnswers);
+    } catch (error: any) {
+      console.error("Failed to fetch questions:", error);
+      alert(error.response?.data?.message || "Failed to load questions");
+      router.push("/dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Timer countdown
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || submitting) return;
 
     const interval = setInterval(() => {
       setSeconds((prev) => {
@@ -29,227 +83,427 @@ export default function AttemptQuestionsPage() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPaused]);
+  }, [isPaused, submitting]);
+
+  // Auto-submit when time runs out
+  useEffect(() => {
+    if (hours === 0 && minutes === 0 && seconds === 0 && !submitting) {
+      handleSubmit();
+    }
+  }, [hours, minutes, seconds]);
+
+  // Load current question's answer and mark as visited
+  useEffect(() => {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion) {
+      setSelectedAnswer(answers[currentQuestion.id] || null);
+      // Mark question as visited when viewing it
+      setVisited((prev) => ({ ...prev, [currentQuestion.id]: true }));
+    }
+  }, [currentQuestionIndex, questions, answers]);
 
   const handlePause = () => {
     setIsPaused(!isPaused);
   };
 
   const handleClearSelection = () => {
-    setSelectedAnswer(null);
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion) {
+      setAnswers((prev) => ({ ...prev, [currentQuestion.id]: "" }));
+      setSelectedAnswer(null);
+      // If cleared, it becomes not-answered (red) if already visited
+      // Remove from reviewed since it's no longer answered
+      setReviewed((prev) => {
+        const updated = { ...prev };
+        delete updated[currentQuestion.id];
+        return updated;
+      });
+    }
+  };
+
+  const handleAnswerSelect = (answer: string) => {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion) {
+      setAnswers((prev) => ({ ...prev, [currentQuestion.id]: answer }));
+      setSelectedAnswer(answer);
+      // If question was marked for review but now has an answer, remove from reviewed
+      // (answered takes priority over reviewed)
+      if (reviewed[currentQuestion.id]) {
+        setReviewed((prev) => {
+          const updated = { ...prev };
+          delete updated[currentQuestion.id];
+          return updated;
+        });
+      }
+    }
+  };
+
+  const handleNext = () => {
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    }
+  };
+
+  const handlePrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  const handleMarkForReview = () => {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion) {
+      setReviewed((prev) => ({ ...prev, [currentQuestion.id]: true }));
+      setVisited((prev) => ({ ...prev, [currentQuestion.id]: true }));
+      handleNext();
+    }
+  };
+
+  const handleSaveAndNext = () => {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion) {
+      // Mark as visited (saved)
+      setVisited((prev) => ({ ...prev, [currentQuestion.id]: true }));
+      // If question has an answer, remove from reviewed (answered takes priority)
+      if (answers[currentQuestion.id]) {
+        setReviewed((prev) => {
+          const updated = { ...prev };
+          delete updated[currentQuestion.id];
+          return updated;
+        });
+      }
+    }
+    handleNext();
+  };
+
+  const handleQuestionClick = (index: number) => {
+    setCurrentQuestionIndex(index);
+  };
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    
+    const confirmSubmit = window.confirm(
+      `Are you sure you want to submit? You have answered ${Object.values(answers).filter(a => a).length} out of ${questions.length} questions.`
+    );
+    
+    if (!confirmSubmit) return;
+
+    try {
+      setSubmitting(true);
+      
+      // Format answers for API
+      const formattedAnswers = Object.entries(answers)
+        .filter(([_, answer]) => answer) // Only include answered questions
+        .map(([questionId, selectedAnswer]) => ({
+          question_id: parseInt(questionId),
+          selected_answer: selectedAnswer,
+        }));
+
+      const result = await submitAnswers(paperId!, formattedAnswers);
+      
+      // Store result in sessionStorage and navigate to results page
+      sessionStorage.setItem("quizResult", JSON.stringify(result));
+      router.push(`/result?paperId=${paperId}`);
+    } catch (error: any) {
+      console.error("Failed to submit answers:", error);
+      alert(error.response?.data?.message || "Failed to submit answers");
+      setSubmitting(false);
+    }
   };
 
   const formatTime = (value: number) => {
     return value.toString().padStart(2, "0");
   };
 
-  // Question states: answered, not-answered, not-visited, review, current
-  const questionStates = Array.from({ length: 100 }, (_, i) => {
-    const num = i + 1;
-    if (num === 1 || num === 2) return "answered";
-    if (num === 3) return "not-answered";
-    if (num === 5) return "review";
-    if (num === currentQuestion) return "current";
-    return "not-visited";
-  });
+  const getQuestionState = (index: number): string => {
+    const question = questions[index];
+    if (!question) return "not-visited";
+    
+    if (index === currentQuestionIndex) return "current";
+    
+    // Priority: answered > reviewed > not-answered > not-visited
+    const hasAnswer = answers[question.id] && answers[question.id].trim() !== "";
+    const isReviewed = reviewed[question.id];
+    const isVisited = visited[question.id];
+    
+    if (hasAnswer) {
+      return "answered"; // Green - question is answered
+    }
+    
+    if (isReviewed) {
+      return "review"; // Purple - marked for review but not answered
+    }
+    
+    if (isVisited && !hasAnswer) {
+      return "not-answered"; // Red - visited/saved but no answer (skipped)
+    }
+    
+    return "not-visited"; // Gray - not visited yet
+  };
 
-  const getQuestionButtonClass = (state: string, num: number) => {
-    const baseClass = "flex items-center justify-center h-10 w-10 rounded-lg font-bold text-sm";
+  const getQuestionButtonClass = (state: string) => {
+    const baseClass = "flex items-center justify-center h-10 w-10 rounded-lg font-bold text-sm cursor-pointer transition-all shadow-sm";
     switch (state) {
       case "answered":
-        return `${baseClass} bg-success text-white`;
+        return `${baseClass} bg-emerald-500 text-white hover:bg-emerald-600 hover:shadow-md`;
       case "not-answered":
-        return `${baseClass} bg-danger text-white`;
+        return `${baseClass} bg-red-500 text-white hover:bg-red-600 hover:shadow-md`;
       case "review":
-        return `${baseClass} bg-review text-white`;
+        return `${baseClass} bg-purple-500 text-white hover:bg-purple-600 hover:shadow-md`;
       case "current":
-        return `${baseClass} border-2 border-primary bg-primary/20 text-primary`;
+        return `${baseClass} border-2 border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200`;
       default:
-        return `${baseClass} bg-gray-200 `;
+        return `${baseClass} bg-slate-200 text-slate-600 hover:bg-slate-300`;
     }
   };
 
-  return (
-    <div className="flex flex-col h-screen">
-      {/* Top Navigation Bar */}
-      <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-border-light dark:border-border-dark px-6 py-3 bg-white dark:bg-background-dark/80 sticky top-0 z-10 backdrop-blur-sm">
-        <div className="flex items-center gap-4">
-          <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
-          <h1 className="text-lg font-bold tracking-tight">UPSC Prelims Mock Test #3</h1>
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading questions...</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex gap-2 text-center">
-            <div className="flex flex-col">
-              <span className="text-xl font-bold leading-tight">{formatTime(hours)}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">Hours</span>
-            </div>
-            <span className="text-xl font-bold text-gray-400 dark:text-gray-600">:</span>
-            <div className="flex flex-col">
-              <span className="text-xl font-bold leading-tight">{formatTime(minutes)}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">Minutes</span>
-            </div>
-            <span className="text-xl font-bold text-gray-400 dark:text-gray-600">:</span>
-            <div className="flex flex-col">
-              <span className="text-xl font-bold leading-tight text-danger">{formatTime(seconds)}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">Seconds</span>
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">No questions found for this paper.</p>
+          <Link href="/dashboard" className="text-primary hover:underline">
+            Go back to dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const currentQuestion = questions[currentQuestionIndex];
+  const optionKeys = Object.keys(currentQuestion.options || {}).sort();
+
+  return (
+    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 to-blue-50/30">
+      {/* Top Navigation Bar */}
+      <header className="flex items-center justify-between whitespace-nowrap border-b border-slate-200 px-4 sm:px-6 py-4 bg-white/80 backdrop-blur-xl sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+            <span className="material-symbols-outlined text-white text-xl">quiz</span>
+          </div>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-slate-800">{paper?.title || "Quiz"}</h1>
+            <p className="text-xs text-slate-500">Question {currentQuestionIndex + 1} of {questions.length}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 sm:gap-6">
+          <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-50 to-orange-50 rounded-xl border border-red-200">
+            <span className="material-symbols-outlined text-red-600 text-lg">timer</span>
+            <div className="flex gap-1.5 text-center">
+              <div className="flex flex-col">
+                <span className="text-lg font-bold leading-tight text-red-600">{formatTime(hours)}</span>
+                <span className="text-xs text-red-500">H</span>
+              </div>
+              <span className="text-lg font-bold text-red-400">:</span>
+              <div className="flex flex-col">
+                <span className="text-lg font-bold leading-tight text-red-600">{formatTime(minutes)}</span>
+                <span className="text-xs text-red-500">M</span>
+              </div>
+              <span className="text-lg font-bold text-red-400">:</span>
+              <div className="flex flex-col">
+                <span className="text-lg font-bold leading-tight text-red-600">{formatTime(seconds)}</span>
+                <span className="text-xs text-red-500">S</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={handlePause}
-            className="flex h-10 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-gray-200/80 /80 px-3 text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
+            disabled={submitting}
+            className="flex h-10 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-xl bg-slate-100 px-3 sm:px-4 text-sm font-medium hover:bg-slate-200 disabled:opacity-50 transition-all"
           >
             <span className="material-symbols-outlined text-lg">{isPaused ? "play_circle" : "pause_circle"}</span>
-            <span>{isPaused ? "Resume" : "Pause"}</span>
+            <span className="hidden sm:inline">{isPaused ? "Resume" : "Pause"}</span>
           </button>
-          <Link
-            href="/result"
-            className="flex h-10 min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary/90"
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex h-10 min-w-[100px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
           >
-            <span>Submit Test</span>
-          </Link>
+            {submitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span className="hidden sm:inline">Submitting...</span>
+              </>
+            ) : (
+              <>
+                <span>Submit</span>
+                <span className="material-symbols-outlined text-lg">check_circle</span>
+              </>
+            )}
+          </button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar: Question Navigation */}
-        <aside className="w-80 flex-shrink-0 border-r border-solid border-border-light dark:border-border-dark bg-white dark:bg-background-dark/50 p-6 overflow-y-auto">
-          <h2 className="text-lg font-bold mb-4">Question Palette</h2>
-          <div className="grid grid-cols-5 gap-2 mb-6">
-            {questionStates.map((state, index) => (
-              <button
-                key={index + 1}
-                onClick={() => setCurrentQuestion(index + 1)}
-                className={getQuestionButtonClass(state, index + 1)}
-              >
-                {index + 1}
-              </button>
-            ))}
+        <aside className="hidden lg:block w-80 flex-shrink-0 border-r border-slate-200 bg-white/80 backdrop-blur-sm p-6 overflow-y-auto">
+          <div className="mb-6">
+            <h2 className="text-lg font-bold text-slate-800 mb-2">Question Palette</h2>
+            <p className="text-xs text-slate-500">Click to navigate between questions</p>
           </div>
-          <div className="space-y-3 text-sm">
-            <h3 className="font-semibold mb-2">Legend</h3>
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 rounded bg-success"></div>
-              <span>Answered</span>
+          <div className="grid grid-cols-5 gap-2 mb-6">
+            {questions.map((_, index) => {
+              const state = getQuestionState(index);
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleQuestionClick(index)}
+                  className={getQuestionButtonClass(state)}
+                >
+                  {index + 1}
+                </button>
+              );
+            })}
+          </div>
+          <div className="space-y-2 text-sm bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <h3 className="font-semibold mb-3 text-slate-800">Legend</h3>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="h-4 w-4 rounded bg-emerald-500"></div>
+              <span className="text-xs">Answered</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 rounded bg-danger"></div>
-              <span>Not Answered</span>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="h-4 w-4 rounded bg-red-500"></div>
+              <span className="text-xs">Not Answered</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 rounded bg-gray-200 "></div>
-              <span>Not Visited</span>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="h-4 w-4 rounded bg-slate-300"></div>
+              <span className="text-xs">Not Visited</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 rounded bg-review"></div>
-              <span>Marked for Review</span>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="h-4 w-4 rounded bg-purple-500"></div>
+              <span className="text-xs">Marked for Review</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 rounded border-2 border-primary"></div>
-              <span>Current Question</span>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="h-4 w-4 rounded border-2 border-blue-500 bg-blue-50"></div>
+              <span className="text-xs">Current Question</span>
             </div>
           </div>
         </aside>
 
         {/* Right Main Content */}
-        <main className="flex-1 flex flex-col justify-between p-6 md:p-10 lg:p-12 overflow-y-auto">
+        <main className="flex-1 flex flex-col justify-between p-4 sm:p-6 md:p-8 lg:p-10 overflow-y-auto">
           <div>
             <div className="max-w-4xl mx-auto">
               {/* Question Header */}
               <div className="mb-8">
-                <h2 className="text-[32px] font-bold leading-tight tracking-tight">Question {currentQuestion} of 100</h2>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">
-                  Read the following passage carefully and answer the question that follows.
-                </p>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-1 h-8 bg-gradient-to-b from-blue-500 to-indigo-600 rounded-full"></div>
+                  <div>
+                    <h2 className="text-2xl sm:text-3xl font-bold leading-tight tracking-tight text-slate-800">
+                      Question {currentQuestionIndex + 1} of {questions.length}
+                    </h2>
+                    <p className="text-slate-500 mt-1 text-sm">
+                      {currentQuestion.marks} mark{currentQuestion.marks !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Question Body */}
-              <div className="prose dark:prose-invert max-w-none text-base leading-relaxed mb-8">
-                <p>
-                  The history of modern India is a tapestry woven with threads of colonialism, resistance, and the quest
-                  for a national identity. The economic policies of the British Raj, while introducing certain
-                  infrastructural developments, fundamentally altered the subcontinent&apos;s economic structure to serve
-                  colonial interests. This led to the de-industrialization of traditional sectors and the
-                  commercialization of agriculture, often at the expense of the peasantry. In response, various forms
-                  of resistance emerged, from localized revolts to the organized, pan-Indian nationalist movement led
-                  by figures like Mahatma Gandhi, Jawaharlal Nehru, and Sardar Patel. The movement was not monolithic;
-                  it encompassed a wide spectrum of ideologies, from the non-violent civil disobedience of the Indian
-                  National Congress to the more radical approaches of revolutionary groups.
-                </p>
-                <p className="font-semibold mt-4">
-                  What was the primary economic consequence of British policies discussed in the passage?
-                </p>
+              <div className="mb-8">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+                  <p className="text-lg sm:text-xl font-medium text-slate-800 leading-relaxed">
+                    {currentQuestion.question_text}
+                  </p>
+                </div>
               </div>
 
               {/* Answer Options */}
-              <div className="space-y-3 max-w-4xl mx-auto">
-                {[
-                  "Rapid industrial growth in urban centers",
-                  "The alteration of India's economy to serve colonial interests",
-                  "A significant increase in peasant land ownership",
-                  "The complete preservation of traditional industries",
-                ].map((option, index) => (
-                  <label
-                    key={index}
-                    className={`flex items-center gap-4 rounded-lg border border-solid border-border-light dark:border-border-dark p-4 cursor-pointer hover:bg-primary/10 hover:border-primary/50 transition-all ${
-                      selectedAnswer === option ? "border-primary bg-primary/10 ring-2 ring-primary/50" : ""
-                    }`}
-                  >
-                    <input
-                      className="h-5 w-5 border-2 border-gray-300 dark:border-gray-600 bg-transparent text-primary focus:ring-primary/50"
-                      name="answer-options"
-                      type="radio"
-                      checked={selectedAnswer === option}
-                      onChange={() => setSelectedAnswer(option)}
-                    />
-                    <span className="text-sm font-medium">{option}</span>
-                  </label>
-                ))}
+              <div className="space-y-3 mb-8">
+                {optionKeys.map((key) => {
+                  const optionText = currentQuestion.options[key];
+                  if (!optionText) return null;
+                  
+                  return (
+                    <label
+                      key={key}
+                      className={`group flex items-center gap-4 rounded-xl border-2 p-4 sm:p-5 cursor-pointer transition-all ${
+                        selectedAnswer === key
+                          ? "border-blue-500 bg-blue-50 shadow-lg shadow-blue-500/20 ring-2 ring-blue-500/30"
+                          : "border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md"
+                      }`}
+                    >
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                        selectedAnswer === key
+                          ? "border-blue-500 bg-blue-500"
+                          : "border-slate-300 group-hover:border-blue-400"
+                      }`}>
+                        {selectedAnswer === key && (
+                          <div className="w-2 h-2 rounded-full bg-white"></div>
+                        )}
+                      </div>
+                      <input
+                        className="sr-only"
+                        name="answer-options"
+                        type="radio"
+                        checked={selectedAnswer === key}
+                        onChange={() => handleAnswerSelect(key)}
+                      />
+                      <span className="text-base font-medium text-slate-800 flex-1">
+                        <span className="font-bold text-blue-600 mr-2">{key}.</span>
+                        {optionText}
+                      </span>
+                      {selectedAnswer === key && (
+                        <span className="material-symbols-outlined text-blue-600">check_circle</span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </div>
           </div>
 
           {/* Action Toolbar */}
-          <div className="mt-10 pt-6 border-t border-border-light dark:border-border-dark max-w-4xl mx-auto">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="mt-8 pt-6 border-t border-slate-200 max-w-4xl mx-auto bg-white/50 backdrop-blur-sm rounded-2xl p-4 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCurrentQuestion((prev) => Math.max(1, prev - 1))}
-                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-lg bg-gray-200/80 /80 px-4 text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
+                  onClick={handlePrevious}
+                  disabled={currentQuestionIndex === 0 || submitting}
+                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-xl bg-slate-100 px-4 text-sm font-medium hover:bg-slate-200 disabled:opacity-50 transition-all"
                 >
-                  <span className="material-symbols-outlined text-xl">arrow_back</span>
-                  <span>Previous</span>
+                  <span className="material-symbols-outlined text-lg">arrow_back</span>
+                  <span className="hidden sm:inline">Previous</span>
                 </button>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={handleClearSelection}
-                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-lg bg-gray-200/80 /80 px-4 text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
+                  disabled={submitting || !selectedAnswer}
+                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-xl bg-slate-100 px-3 sm:px-4 text-sm font-medium hover:bg-slate-200 disabled:opacity-50 transition-all"
                 >
-                  <span className="material-symbols-outlined text-xl">backspace</span>
-                  <span>Clear Selection</span>
+                  <span className="material-symbols-outlined text-lg">backspace</span>
+                  <span className="hidden sm:inline">Clear</span>
                 </button>
                 <button
-                  onClick={() => {
-                    // Mark for review logic
-                    setCurrentQuestion((prev) => Math.min(100, prev + 1));
-                  }}
-                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-lg bg-review/20 px-4 text-sm font-medium text-review hover:bg-review/30"
+                  onClick={handleMarkForReview}
+                  disabled={submitting}
+                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-xl bg-purple-100 text-purple-700 px-3 sm:px-4 text-sm font-medium hover:bg-purple-200 disabled:opacity-50 transition-all"
                 >
-                  <span className="material-symbols-outlined text-xl">bookmark</span>
-                  <span>Mark for Review & Next</span>
+                  <span className="material-symbols-outlined text-lg">bookmark</span>
+                  <span className="hidden sm:inline">Mark & Next</span>
                 </button>
                 <button
-                  onClick={() => {
-                    // Save answer logic
-                    setCurrentQuestion((prev) => Math.min(100, prev + 1));
-                    setSelectedAnswer(null);
-                  }}
-                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-lg bg-success px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-success/90"
+                  onClick={handleSaveAndNext}
+                  disabled={currentQuestionIndex === questions.length - 1 || submitting}
+                  className="flex h-11 items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 sm:px-6 text-sm font-bold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50"
                 >
                   <span>Save & Next</span>
-                  <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                  <span className="material-symbols-outlined text-lg">arrow_forward</span>
                 </button>
               </div>
             </div>

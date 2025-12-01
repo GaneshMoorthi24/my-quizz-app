@@ -5,13 +5,16 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AdminLayout from "@/components/AdminLayout";
 import { questionsApi, papersApi } from "@/lib/admin";
+import { generateQuestionAnswer } from "@/lib/api";
 
 export default function QuestionEditPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const questionId = params?.questionId as string;
-  const paperId = searchParams?.get('paperId');
+  const rawPaperId = searchParams?.get('paperId');
+  // Clean paperId - convert "null" string to null, and filter out invalid values
+  const paperId = rawPaperId && rawPaperId !== 'null' && rawPaperId !== 'undefined' ? rawPaperId : null;
   const isNew = questionId === 'new';
   
   const [paper, setPaper] = useState<any>(null);
@@ -24,6 +27,7 @@ export default function QuestionEditPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingAnswer, setGeneratingAnswer] = useState(false);
 
   useEffect(() => {
     if (paperId) {
@@ -37,12 +41,13 @@ export default function QuestionEditPage() {
   }, [questionId, paperId]);
 
   const fetchPaper = async () => {
-    if (!paperId) return;
+    if (!paperId || paperId === 'null' || paperId === 'undefined') return;
     try {
       const data = await papersApi.getById(paperId);
       setPaper(data);
     } catch (error) {
       console.error("Failed to fetch paper:", error);
+      // Don't set paper if fetch fails
     }
   };
 
@@ -77,26 +82,87 @@ export default function QuestionEditPage() {
     });
   };
 
+  const handleAnswerChange = async (value: string) => {
+    // If "Not sure - Let AI determine" is selected (empty value) and it's an existing question
+    if (value === "" && !isNew && questionId !== 'new') {
+      // Check if we have question text and at least one option
+      if (!formData.question_text || !Object.values(formData.options).some(opt => opt.trim() !== "")) {
+        alert("Please enter the question text and at least one option before generating the answer.");
+        return;
+      }
+      
+      setGeneratingAnswer(true);
+      try {
+        // Generate answer using AI for existing question
+        const result = await generateQuestionAnswer(questionId);
+        
+        // Update form with generated answer
+        setFormData(prev => ({
+          ...prev,
+          correct_answer: result.correct_answer
+        }));
+      } catch (error) {
+        console.error("Failed to generate answer:", error);
+        alert("Failed to generate answer. The answer will be generated automatically when you save.");
+      } finally {
+        setGeneratingAnswer(false);
+      }
+    } else {
+      // Normal selection or new question - just update the value
+      // For new questions, backend will generate answer on save if empty
+      setFormData({ ...formData, correct_answer: value });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.question_text || !formData.correct_answer) {
-      alert("Please fill in all required fields");
+    if (!formData.question_text) {
+      alert("Please enter the question text");
       return;
     }
 
-    setSaving(true);
-    try {
-      if (isNew && paperId) {
-        await questionsApi.create(paperId, formData);
-      } else {
-        await questionsApi.update(questionId, formData);
+    // Validate paperId for new questions
+    if (isNew) {
+      // Clean paperId - remove 'null' or 'undefined' strings
+      let validPaperId = paperId;
+      if (!validPaperId || validPaperId === 'null' || validPaperId === 'undefined') {
+        validPaperId = paper?.id;
       }
-      router.push(`/admin/papers/${paper?.id || paperId}`);
-    } catch (error) {
-      console.error("Failed to save question:", error);
-      alert("Failed to save question. Please try again.");
-    } finally {
-      setSaving(false);
+      
+      if (!validPaperId) {
+        alert("Error: Paper ID is missing. Please go back to the paper page and try creating the question again.");
+        return;
+      }
+
+      setSaving(true);
+      try {
+        // Ensure paperId is a valid number/string
+        const paperIdToSend = String(validPaperId);
+        if (!paperIdToSend || paperIdToSend === 'null' || paperIdToSend === 'undefined' || isNaN(Number(paperIdToSend))) {
+          throw new Error('Invalid paper ID. Please go back to the paper page and try again.');
+        }
+        await questionsApi.create(paperIdToSend, formData);
+        router.push(`/admin/papers/${validPaperId}`);
+      } catch (error: any) {
+        console.error("Failed to save question:", error);
+        const errorMessage = error?.response?.data?.message || error?.message || "Failed to save question. Please try again.";
+        alert(errorMessage);
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      // Update existing question
+      setSaving(true);
+      try {
+        await questionsApi.update(questionId, formData);
+        router.push(`/admin/papers/${paper?.id || paperId}`);
+      } catch (error: any) {
+        console.error("Failed to save question:", error);
+        const errorMessage = error?.response?.data?.message || error?.message || "Failed to save question. Please try again.";
+        alert(errorMessage);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -176,21 +242,39 @@ export default function QuestionEditPage() {
             {/* Correct Answer */}
             <div>
               <label className="block text-sm font-medium text-text-light mb-2">
-                Correct Answer *
+                Correct Answer (Optional - AI can generate if left blank)
               </label>
               <select
-                required
                 value={formData.correct_answer}
-                onChange={(e) => setFormData({ ...formData, correct_answer: e.target.value })}
-                className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                onChange={(e) => handleAnswerChange(e.target.value)}
+                disabled={generatingAnswer}
+                className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <option value="">Select correct answer</option>
+                <option value="">Not sure - Let AI determine</option>
                 {Object.keys(formData.options).map((key) => (
                   <option key={key} value={key}>
                     {key}
                   </option>
                 ))}
               </select>
+              {generatingAnswer && (
+                <p className="mt-1 text-xs text-primary flex items-center gap-1">
+                  <span className="animate-spin">⏳</span>
+                  AI is determining the correct answer...
+                </p>
+              )}
+              {!generatingAnswer && formData.correct_answer && (
+                <p className="mt-1 text-xs text-success">
+                  ✓ Answer set: {formData.correct_answer}
+                </p>
+              )}
+              {!generatingAnswer && !formData.correct_answer && (
+                <p className="mt-1 text-xs text-text-light/70">
+                  {isNew 
+                    ? "Leave blank and AI will generate the answer automatically when you save."
+                    : "Select \"Not sure - Let AI determine\" to generate the answer, or choose an option manually."}
+                </p>
+              )}
             </div>
 
             {/* Difficulty */}

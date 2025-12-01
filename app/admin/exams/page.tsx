@@ -14,7 +14,7 @@ export default function ExamsPage() {
   const [formData, setFormData] = useState({
     name: "",
     code: "",
-    description: "",
+    access_type: "free",
   });
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,7 +46,7 @@ export default function ExamsPage() {
         await examsApi.create(formData);
       }
       setShowModal(false);
-      setFormData({ name: "", code: "", description: "" });
+      setFormData({ name: "", code: "", access_type: "free" });
       setEditingExam(null);
       fetchExams();
     } catch (error) {
@@ -60,7 +60,7 @@ export default function ExamsPage() {
     setFormData({
       name: exam.name || "",
       code: exam.code || "",
-      description: exam.description || "",
+      access_type: exam.access_type || "free",
     });
     setShowModal(true);
   };
@@ -79,7 +79,7 @@ export default function ExamsPage() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingExam(null);
-    setFormData({ name: "", code: "", description: "" });
+    setFormData({ name: "", code: "", access_type: "free" });
     router.replace('/admin/exams');
   };
 
@@ -128,14 +128,20 @@ export default function ExamsPage() {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-text-light mb-1">{exam.name}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-bold text-text-light">{exam.name}</h3>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        exam.access_type === 'paid' 
+                          ? 'bg-amber-500 text-white dark:bg-amber-600 dark:text-white' 
+                          : 'bg-green-500 text-white dark:bg-green-600 dark:text-white'
+                      }`}>
+                        {exam.access_type === 'paid' ? 'Paid' : 'Free'}
+                      </span>
+                    </div>
                     <p className="text-sm text-text-light/70">{exam.code}</p>
                   </div>
                   <span className="material-symbols-outlined text-primary text-2xl">school</span>
                 </div>
-                {exam.description && (
-                  <p className="text-sm text-text-light/70 mb-4">{exam.description}</p>
-                )}
                 <div className="flex items-center justify-between text-sm text-text-light/70 mb-4">
                   <span>{exam.papers_count || 0} Papers</span>
                   <span>{exam.questions_count || 0} Questions</span>
@@ -209,15 +215,20 @@ export default function ExamsPage() {
                 </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-text-light mb-2">
-                    Description
+                    Access Type *
                   </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  <select
+                    required
+                    value={formData.access_type}
+                    onChange={(e) => setFormData({ ...formData, access_type: e.target.value })}
                     className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    rows={3}
-                    placeholder="Optional description"
-                  />
+                  >
+                    <option value="free">Free User</option>
+                    <option value="paid">Paid User</option>
+                  </select>
+                  <p className="text-xs text-text-light/60 mt-1">
+                    Select whether this exam is available for free users or paid users only
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <button

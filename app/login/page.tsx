@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import "./style.css";
-import { getUser, loginUser, loginWithGoogle } from "@/lib/auth";
+import { getUser, loginUser, loginWithGoogle, resendVerificationEmail } from "@/lib/auth";
+import { detectPlan, detectUserRole, getUserPanelPath } from "@/lib/plan-utils";
 
 interface ParticleStyle {
   left: string;
@@ -31,6 +32,7 @@ declare global {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -39,7 +41,13 @@ export default function LoginPage() {
   const [particleStyles, setParticleStyles] = useState<ParticleStyle[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [emailResent, setEmailResent] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  
+  // Get plan from URL if coming from signup
+  const planFromUrl = searchParams?.get('plan');
 
 
 
@@ -53,6 +61,13 @@ export default function LoginPage() {
       animationDuration: `${3 + Math.random() * 4}s`,
     }));
     setParticleStyles(styles);
+
+    // Load saved email if remember me was previously checked
+    const savedEmail = localStorage.getItem('remembered_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
   }, []);
 
   const handleGoogleSignIn = async (response: any) => {
@@ -63,29 +78,15 @@ export default function LoginPage() {
       // response.credential is the JWT token from Google
       const credential = response.credential || response;
       const result = await loginWithGoogle(credential);
-      console.log('✅ Google login successful:', result);
-      console.log('User data:', result.user);
       
-      // Store token and user
+      // Store token and user (Google login defaults to remember me - localStorage)
       if (result.user) {
         localStorage.setItem('user', JSON.stringify(result.user));
       }
       
-      // Check for admin status and redirect accordingly
-      const isAdmin = result.user?.is_admin === 1 || 
-                     result.user?.is_admin === true || 
-                     result.user?.is_admin === '1' ||
-                     result.user?.role === 'admin';
-      
-      console.log('Is admin?', isAdmin);
-      
-      if (isAdmin) {
-        console.log('Redirecting to /admin');
-        router.push('/admin');
-      } else {
-        console.log('Redirecting to /dashboard');
-        router.push('/dashboard');
-      }
+      // Use centralized function to get correct panel path
+      const panelPath = getUserPanelPath(result.user);
+      router.push(panelPath);
     } catch (error: any) {
       console.error('❌ Google login failed:', error);
       if (error.response?.status === 401 || error.response?.status === 422) {
@@ -177,60 +178,87 @@ export default function LoginPage() {
     if (isLoading) return;
     setIsLoading(true);
     setErrorMessage('');
+    setEmailResent(false);
   
     try {
       // 1️⃣ Login to backend
       const result = await loginUser(email, password);
-      console.log('✅ Login successful:', result);
-      console.log('User data:', result.user);
-      console.log('is_admin value:', result.user?.is_admin, 'Type:', typeof result.user?.is_admin);
   
-      // 2️⃣ Store token and user
-      localStorage.setItem('token', result.access_token);
-      localStorage.setItem('user', JSON.stringify(result.user));
-  
-      // 3️⃣ Redirect based on admin status
-      // Check for is_admin (can be 1, true, or '1') or role === 'admin'
-      const isAdmin = result.user?.is_admin === 1 || 
-                     result.user?.is_admin === true || 
-                     result.user?.is_admin === '1' ||
-                     result.user?.role === 'admin';
-      
-      console.log('Is admin?', isAdmin);
-      
-      if (isAdmin) {
-        console.log('Redirecting to /admin');
-        router.push('/admin');
+      // 2️⃣ Store token and user based on remember me preference
+      if (rememberMe) {
+        // Store in localStorage (persists across browser sessions)
+        localStorage.setItem('token', result.access_token);
+        localStorage.setItem('user', JSON.stringify(result.user));
+        localStorage.setItem('remembered_email', email);
       } else {
-        console.log('Redirecting to /dashboard');
-        router.push('/dashboard');
+        // Store in sessionStorage (cleared when browser closes)
+        sessionStorage.setItem('token', result.access_token);
+        sessionStorage.setItem('user', JSON.stringify(result.user));
+        // Remove from localStorage if it exists
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('remembered_email');
       }
+  
+      // 3️⃣ Redirect based on user role and plan
+      // Use centralized function to get correct panel path
+      const panelPath = getUserPanelPath(result.user);
+      router.push(panelPath);
     } catch (error: any) {
       console.error('❌ Login failed:', error);
   
       if (error.response?.status === 401) {
         setErrorMessage('Invalid email or password.');
+        setEmailResent(false);
       } else if (error.response?.status === 403) {
-        setErrorMessage('Please verify your email before logging in.');
+        // Check if email was automatically resent
+        if (error.response?.data?.email_resent) {
+          setErrorMessage(error.response.data.message || 'A new verification email has been sent to your email address. Please check your inbox and verify your email before logging in.');
+          setEmailResent(true);
+        } else {
+          setErrorMessage('Please verify your email before logging in.');
+          setEmailResent(false);
+        }
       } else {
         setErrorMessage('Something went wrong. Please try again.');
+        setEmailResent(false);
       }
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleResendVerification = async () => {
+    if (!email || resendingEmail) return;
+    
+    setResendingEmail(true);
+    setErrorMessage(null);
+    
+    try {
+      const result = await resendVerificationEmail(email);
+      setErrorMessage(result.message || 'Verification email has been sent! Please check your inbox.');
+      setEmailResent(true);
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to resend verification email. Please try again.');
+      setEmailResent(false);
+    } finally {
+      setResendingEmail(false);
+    }
+  };
   
   
 
-  // Auto-dismiss error message after 5 seconds
+  // Auto-dismiss error message after 5 seconds (but keep success messages longer)
   useEffect(() => {
     if (errorMessage) {
+      const dismissTime = emailResent ? 10000 : 5000; // Keep success messages for 10 seconds
       const timer = setTimeout(() => {
         setErrorMessage(null);
-      }, 5000);
+        setEmailResent(false);
+      }, dismissTime);
       return () => clearTimeout(timer);
     }
-  }, [errorMessage]);
+  }, [errorMessage, emailResent]);
   
   
 
@@ -297,8 +325,61 @@ export default function LoginPage() {
           {errorMessage && (
             <div className="error-message-container">
               <div className="error-message">
-                <span className="material-symbols-outlined error-icon">error</span>
-                <span className="error-text">{errorMessage}</span>
+                <span className={`material-symbols-outlined error-icon ${emailResent ? 'success' : ''}`}>
+                  {emailResent ? 'mark_email_read' : 'error'}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <span className={`error-text ${emailResent ? 'success-text' : ''}`}>{errorMessage}</span>
+                  {!emailResent && errorMessage.includes('verify') && email && (
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={resendingEmail}
+                      className="resend-verification-button"
+                      style={{
+                        marginTop: '12px',
+                        padding: '8px 16px',
+                        background: 'rgba(74, 144, 226, 0.1)',
+                        border: '2px solid #4A90E2',
+                        borderRadius: '8px',
+                        color: '#4A90E2',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: resendingEmail ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.3s ease',
+                        width: '100%',
+                        justifyContent: 'center'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!resendingEmail) {
+                          e.currentTarget.style.background = 'rgba(74, 144, 226, 0.2)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!resendingEmail) {
+                          e.currentTarget.style.background = 'rgba(74, 144, 226, 0.1)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }
+                      }}
+                    >
+                      {resendingEmail ? (
+                        <>
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px', animation: 'spin 1s linear infinite' }}>refresh</span>
+                          <span>Sending...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>mail</span>
+                          <span>Resend Verification Email</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -369,7 +450,10 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
-                if (errorMessage) setErrorMessage(null);
+                if (errorMessage) {
+                  setErrorMessage(null);
+                  setEmailResent(false);
+                }
               }}
               onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
@@ -395,7 +479,10 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
-                if (errorMessage) setErrorMessage(null);
+                if (errorMessage) {
+                  setErrorMessage(null);
+                  setEmailResent(false);
+                }
               }}
               onFocus={() => setFocusedField('password')}
               onBlur={() => setFocusedField(null)}
@@ -422,10 +509,14 @@ export default function LoginPage() {
 
           <div className="form-options">
             <label className="remember-me">
-              <input type="checkbox" />
+              <input 
+                type="checkbox" 
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
               <span>Remember me</span>
             </label>
-            <Link href="#" className="forgot-password">
+            <Link href="/forgot-password" className="forgot-password">
               Forgot Password?
             </Link>
           </div>

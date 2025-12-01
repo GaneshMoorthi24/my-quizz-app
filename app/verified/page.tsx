@@ -1,35 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import "./style.css";
 
-interface ParticleStyle {
-  left: string;
-  top: string;
-  animationDelay: string;
-  animationDuration: string;
-}
-
 export default function VerifiedPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const status = searchParams.get('status');
-  const [particleStyles, setParticleStyles] = useState<ParticleStyle[]>([]);
-  const [mounted, setMounted] = useState(false);
-
-  // Generate particle styles only on client side
-  useEffect(() => {
-    const styles: ParticleStyle[] = Array.from({ length: 20 }, () => ({
-      left: `${Math.random() * 100}%`,
-      top: `${Math.random() * 100}%`,
-      animationDelay: `${Math.random() * 5}s`,
-      animationDuration: `${3 + Math.random() * 4}s`,
-    }));
-    setParticleStyles(styles);
-    setMounted(true);
-  }, []);
 
   const getStatusConfig = () => {
     switch (status) {
@@ -75,50 +52,8 @@ export default function VerifiedPage() {
 
   const config = getStatusConfig();
 
-  if (!mounted) {
-    return (
-      <div className="verified-container">
-        <div className="verified-card">
-          <div className="loading-spinner"></div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="verified-container">
-      {/* Animated Background */}
-      <div className="animated-background">
-        <div className="gradient-orb orb-1"></div>
-        <div className="gradient-orb orb-2"></div>
-        <div className="gradient-orb orb-3"></div>
-        <div className="particles">
-          {particleStyles.map((style, i) => (
-            <div key={i} className="particle" style={style}></div>
-          ))}
-        </div>
-        <div className="quiz-icon-animation icon-1">
-          <span className="material-symbols-outlined">quiz</span>
-        </div>
-        <div className="quiz-icon-animation icon-2">
-          <span className="material-symbols-outlined">school</span>
-        </div>
-        <div className="quiz-icon-animation icon-3">
-          <span className="material-symbols-outlined">lightbulb</span>
-        </div>
-        <div className="quiz-icon-animation icon-4">
-          <span className="material-symbols-outlined">fact_check</span>
-        </div>
-        <div className="quiz-icon-animation icon-5">
-          <span className="material-symbols-outlined">check_circle</span>
-        </div>
-        <div className="quiz-icon-animation icon-6">
-          <span className="material-symbols-outlined">verified</span>
-        </div>
-        <div className="circle circle-1"></div>
-        <div className="circle circle-2"></div>
-        <div className="circle circle-3"></div>
-      </div>
 
       {/* Verified Card */}
       <div className="verified-card">
@@ -137,13 +72,6 @@ export default function VerifiedPage() {
                 {config.icon}
               </span>
             </div>
-            {status === 'success' && (
-              <div className="success-rings">
-                <div className="ring ring-1"></div>
-                <div className="ring ring-2"></div>
-                <div className="ring ring-3"></div>
-              </div>
-            )}
           </div>
 
           {/* Title and Subtitle */}

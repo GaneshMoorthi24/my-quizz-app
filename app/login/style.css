@@ -7,11 +7,22 @@
   padding: 1.5rem;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #2d5ba8 0%, #3a7bc4 25%, #4A90E2 50%, #6ba5e8 75%, #8cb9ee 100%);
+  background: linear-gradient(135deg, #2d5ba8 0%, #3a7bc4 25%, #4A90E2 50%, #6ba5e8 75%, #8cb9ee 100%) !important;
   background-size: 400% 400%;
   animation: gradientShift 15s ease infinite;
   width: 100%;
   box-sizing: border-box;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+/* Keep login screen background unchanged in dark mode */
+.dark .login-container {
+  background: linear-gradient(135deg, #2d5ba8 0%, #3a7bc4 25%, #4A90E2 50%, #6ba5e8 75%, #8cb9ee 100%) !important;
 }
 
 @keyframes gradientShift {
@@ -275,7 +286,7 @@
 }
 
 .auth-card {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.95) !important;
   backdrop-filter: blur(20px);
   border-radius: 28px;
   padding: 2rem;
@@ -287,6 +298,14 @@
   animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
   border: 1px solid rgba(255, 255, 255, 0.3);
   margin: auto;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+/* Keep login card white even in dark mode */
+.dark .auth-card {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.5) !important;
 }
 
 @keyframes slideUp {
@@ -367,16 +386,28 @@
 .auth-title {
   font-size: 24px;
   font-weight: 700;
-  color: #333333;
+  color: #333333 !important;
   margin: 0 0 0.4rem 0;
   animation: fadeInDown 0.8s ease-out 0.3s both;
+  transition: color 0.3s ease;
+}
+
+/* Keep title dark even in dark mode */
+.dark .auth-title {
+  color: #333333 !important;
 }
 
 .auth-subtitle {
   font-size: 13px;
-  color: #9B9B9B;
+  color: #9B9B9B !important;
   margin: 0;
   animation: fadeInDown 0.8s ease-out 0.4s both;
+  transition: color 0.3s ease;
+}
+
+/* Keep subtitle dark even in dark mode */
+.dark .auth-subtitle {
+  color: #9B9B9B !important;
 }
 
 .auth-form {
@@ -506,6 +537,13 @@
   background: rgba(255, 255, 255, 0.95);
   position: relative;
   z-index: 1;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* Keep divider text and background light even in dark mode */
+.dark .divider span {
+  color: #9B9B9B !important;
+  background: rgba(255, 255, 255, 0.95) !important;
 }
 
 /* Animated Error Message */
@@ -547,12 +585,28 @@
   flex-shrink: 0;
 }
 
+.error-icon.success {
+  color: #50E3C2;
+  animation: none;
+}
+
 .error-text {
   color: #C0392B;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
   flex: 1;
+}
+
+.error-text.success-text {
+  color: #1E8449;
+}
+
+/* Success message styling when email is resent */
+.error-message:has(.error-icon.success) {
+  background: linear-gradient(135deg, rgba(80, 227, 194, 0.1) 0%, rgba(30, 132, 73, 0.1) 100%);
+  border: 2px solid rgba(80, 227, 194, 0.3);
+  box-shadow: 0 8px 24px rgba(80, 227, 194, 0.2);
 }
 
 @keyframes errorSlideIn {
@@ -625,6 +679,17 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
+/* Keep form inputs light even in dark mode */
+.dark .form-input {
+  background: rgba(248, 249, 250, 0.8) !important;
+  color: #333333 !important;
+  border-color: #E0E0E0 !important;
+}
+
+.dark .form-input:focus {
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
 .form-input.has-value,
 .form-input.focused {
   padding-top: 1.2rem;
@@ -672,6 +737,11 @@
   z-index: 2;
 }
 
+/* Keep floating label dark even in dark mode */
+.dark .floating-label {
+  color: #9B9B9B !important;
+}
+
 .floating-label.active {
   top: -0.6rem;
   left: 0.6rem;
@@ -682,6 +752,11 @@
   padding: 0 0.4rem;
   border-radius: 5px;
   z-index: 3;
+}
+
+/* Keep active floating label light even in dark mode */
+.dark .floating-label.active {
+  background: #f5f8fc !important;
 }
 
 .label-icon {
@@ -784,6 +859,11 @@
   color: #333333;
   cursor: pointer;
   transition: all 0.3s ease;
+}
+
+/* Keep remember me text dark even in dark mode */
+.dark .remember-me {
+  color: #333333 !important;
 }
 
 .remember-me:hover {
@@ -912,6 +992,12 @@
   font-size: 12px;
   color: #9B9B9B;
   animation: fadeInUp 0.8s ease-out 0.8s both;
+  transition: color 0.3s ease;
+}
+
+/* Keep footer text dark even in dark mode */
+.dark .auth-footer {
+  color: #9B9B9B !important;
 }
 
 .auth-link {
@@ -920,7 +1006,9 @@
   font-weight: 600;
   transition: all 0.3s ease;
   position: relative;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .auth-link::after {
@@ -941,6 +1029,15 @@
 .auth-link:hover {
   color: #357ABD;
   transform: translateY(-2px);
+}
+
+.auth-link .material-symbols-outlined {
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.auth-link:hover .material-symbols-outlined {
+  transform: translateX(-3px);
 }
 
 /* Responsive Design */

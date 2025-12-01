@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import "./style.css";
 import { registerUser } from "@/lib/auth";
@@ -15,6 +15,7 @@ interface ParticleStyle {
 
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -27,6 +28,10 @@ export default function SignupPage() {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [particleStyles, setParticleStyles] = useState<ParticleStyle[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // Get plan from URL parameter
+  const planParam = searchParams?.get('plan') || 'free';
+  const selectedPlan = planParam === 'institute' ? 'standard' : planParam; // Normalize institute to standard
 
   // Generate particle styles only on client side to avoid hydration mismatch
   useEffect(() => {
@@ -60,10 +65,10 @@ export default function SignupPage() {
     setErrorMessage(null);
 
     try {
-      const result = await registerUser(formData.name, formData.email, formData.password);
-      console.log("✅ Registered successfully:", result);
+      await registerUser(formData.name, formData.email, formData.password, selectedPlan);
       alert("Account created successfully! Please check your email for verification link.");
-      router.push("/login");
+      // Redirect to login with plan info for better UX
+      router.push(`/login?plan=${selectedPlan}`);
     } catch (error: any) {
       console.error("❌ Registration failed:", error);
   

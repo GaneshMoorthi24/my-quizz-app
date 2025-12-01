@@ -11,28 +11,23 @@ interface AdminLayoutProps {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const [user, setUser] = useState<any>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    async function fetchUser() {
+      async function fetchUser() {
       try {
-        // Check if token exists first
-        const token = localStorage.getItem('token');
+        // Check if token exists first (check both storages)
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
         if (!token) {
-          console.log('No token found, redirecting to login');
           router.push('/login');
           return;
         }
 
-        console.log('Fetching user data...');
         const data = await getUser();
-        console.log('User data:', data);
-        console.log('is_admin value:', data?.is_admin, 'Type:', typeof data?.is_admin);
-        console.log('role value:', data?.role);
         
         if (!data) {
-          console.log('No user data returned, redirecting to login');
           router.push('/login');
           return;
         }
@@ -43,15 +38,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                        data?.is_admin === '1' ||
                        data?.role === 'admin';
         
-        console.log('Is admin?', isAdmin);
-        
         if (!isAdmin) {
-          console.log('User is not admin, redirecting to dashboard. is_admin:', data?.is_admin, 'role:', data?.role);
           router.push('/dashboard');
           return;
         }
         
-        console.log('Admin user authenticated');
         setUser(data);
       } catch (error: any) {
         console.error('Admin auth error:', error);
@@ -61,8 +52,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         // Check error type
         if (error.response?.status === 401) {
           // Unauthorized - token invalid or expired
-          console.log('401 Unauthorized - removing token and redirecting to login');
           localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('user');
           router.push('/login');
         } else if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
           // API server not running
@@ -71,7 +64,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           // Don't redirect, show error instead
         } else {
           // Other error - redirect to login
-          console.log('Other error, redirecting to login');
           router.push('/login');
         }
       }
@@ -89,9 +81,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   };
 
   const navItems = [
-    { href: '/admin', label: 'Dashboard', icon: 'dashboard' },
-    { href: '/admin/exams', label: 'Exams', icon: 'school' },
-    { href: '/admin/imports', label: 'Import History', icon: 'history' },
+    { href: '/admin', label: 'Dashboard', icon: 'dashboard', color: 'text-blue-500' },
+    { href: '/admin/exams', label: 'Exams', icon: 'school', color: 'text-purple-500' },
+    { href: '/admin/imports', label: 'Import History', icon: 'history', color: 'text-green-500' },
   ];
 
   const isActive = (href: string) => {
@@ -103,66 +95,153 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-text-light">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-text-light font-medium">Loading...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative flex min-h-screen w-full max-w-full overflow-x-hidden">
-      {/* SideNavBar */}
-      <aside className="flex h-screen w-48 sm:w-56 md:w-64 flex-col border-r border-border-light bg-card-light p-3 sm:p-4 sticky top-0 flex-shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3 px-2 pb-4 sm:pb-6">
-          <span className="material-symbols-outlined text-primary text-2xl sm:text-3xl">admin_panel_settings</span>
-          <h1 className="text-lg sm:text-xl font-bold text-text-light truncate">Admin Panel</h1>
-        </div>
-        <div className="flex flex-col justify-between flex-grow overflow-hidden">
-          <nav className="flex flex-col gap-2 overflow-y-auto">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 rounded-lg transition-colors ${
-                  isActive(item.href)
-                    ? 'bg-primary/10 text-primary'
-                    : 'hover:bg-primary/10 hover:text-primary'
-                }`}
-                href={item.href}
-              >
-                <span className="material-symbols-outlined text-lg sm:text-xl">{item.icon}</span>
-                <p className="text-xs sm:text-sm font-medium truncate">{item.label}</p>
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-2 sm:gap-3 px-2 pt-4 border-t border-border-light flex-shrink-0 min-w-0">
-            <div
-              className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 sm:size-10 flex-shrink-0"
-              style={{
-                backgroundImage:
-                  'url("https://lh3.googleusercontent.com/aida-public/AB6AXuChcSZqEgdMAsKgrLaSsyN9Sb-8rtQhwZr85sgRL_69W4ufJQJVHruq1bfFhRsP4d58ULIHNZpvuqBrh8ekVIOsuMEwkBuHX5MXdP_g0kQfgnX8QBMp0KDPmCfa4QaK6e_bvBme3OEmdMzFXRDoMGzSDVwnsJz0lKVJLaXUdUigk6FvxBau51Gx51qATPs7uQ6iPZe-AoBpmjJga6SqFa7vG0R2Pt1lmox9M73AM6jtG8BfsAXEutKLnV9urTwTuPEobKTD9CHBc5tZ")',
-              }}
-            ></div>
-            <div className="flex flex-col flex-1 min-w-0">
-              <h2 className="text-xs sm:text-sm font-medium text-text-light truncate">
-                {user?.name}
-              </h2>
-              <p className="text-xs text-text-light/70 truncate">{user?.email}</p>
-              <p className="text-xs text-primary font-medium">Admin</p>
+    <div className="relative flex flex-col min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
+      {/* Top Navigation Bar */}
+      <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-xl border-b border-slate-200 shadow-sm">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo and Brand */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+                <span className="material-symbols-outlined text-white text-2xl">admin_panel_settings</span>
+              </div>
+              <div>
+                <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  Admin Panel
+                </h1>
+                <p className="text-xs text-slate-500 hidden sm:block">Control Center</p>
+              </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="ml-auto text-text-light/70 hover:text-primary transition-colors cursor-pointer flex-shrink-0"
-              aria-label="Logout"
-            >
-              <span className="material-symbols-outlined text-lg sm:text-xl">logout</span>
-            </button>
+
+            {/* Desktop Navigation */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  className={`group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${
+                    isActive(item.href)
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
+                  }`}
+                  href={item.href}
+                >
+                  <span className={`material-symbols-outlined text-lg ${isActive(item.href) ? 'text-white' : item.color}`}>
+                    {item.icon}
+                  </span>
+                  <span className={`font-medium text-sm ${isActive(item.href) ? 'text-white' : ''}`}>
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
+            </nav>
+
+            {/* User Profile and Mobile Menu */}
+            <div className="flex items-center gap-3">
+              {/* User Profile - Desktop */}
+              <div className="hidden sm:flex items-center gap-3 pr-3 border-r border-slate-200">
+                <div className="relative">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shadow-md ring-2 ring-white flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">
+                      {(user?.name || 'Admin').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                </div>
+                <div className="hidden lg:block">
+                  <h3 className="text-sm font-semibold text-slate-800 truncate">
+                    {user?.name || 'Admin'}
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                </div>
+              </div>
+
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all duration-200"
+                aria-label="Logout"
+                title="Logout"
+              >
+                <span className="material-symbols-outlined text-xl">logout</span>
+              </button>
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                aria-label="Toggle menu"
+              >
+                <span className="material-symbols-outlined text-xl">
+                  {mobileMenuOpen ? 'close' : 'menu'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
-      </aside>
+
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-slate-200 bg-white">
+            <nav className="px-4 py-3 space-y-1">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
+                    isActive(item.href)
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <span className={`material-symbols-outlined text-xl ${isActive(item.href) ? 'text-white' : item.color}`}>
+                    {item.icon}
+                  </span>
+                  <span className={`font-medium text-sm ${isActive(item.href) ? 'text-white' : ''}`}>
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
+              {/* Mobile User Info */}
+              <div className="pt-3 mt-3 border-t border-slate-200">
+                <div className="flex items-center gap-3 px-3 py-2">
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shadow-md ring-2 ring-white flex items-center justify-center">
+                      <span className="text-white font-bold text-base">
+                        {(user?.name || 'Admin').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-800 truncate">
+                      {user?.name || 'Admin'}
+                    </h3>
+                    <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                    <span className="inline-block mt-1 text-xs font-medium text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                      Administrator
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </nav>
+          </div>
+        )}
+      </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 min-w-0 max-w-full" style={{ backgroundColor: "#f9f9fc" }}>
-        <div className="w-full max-w-full">
+      <main className="flex-1 overflow-y-auto min-w-0">
+        <div className="p-6 lg:p-8">
           {children}
         </div>
       </main>

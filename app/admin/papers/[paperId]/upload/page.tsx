@@ -66,25 +66,34 @@ export default function PaperUploadPage() {
     try {
       const result = await uploadApi.parsePDF(paperId, parseId, language);
       
-      // Debug: Log parsing result
-      console.log('PDF Parsing Result:', result);
-      if (result.debug_data) {
-        console.log('Parsed Questions:', result.debug_data);
-        console.log('Questions Count:', result.questions_count);
+      // Extract questions from parsePDF response first
+      let questions: any[] = [];
+      
+      // Check multiple possible response formats
+      if (result.parsed_questions && Array.isArray(result.parsed_questions)) {
+        questions = result.parsed_questions;
+      } else if (result.parsed_data && Array.isArray(result.parsed_data)) {
+        questions = result.parsed_data;
+      } else if (result.questions && Array.isArray(result.questions)) {
+        questions = result.questions;
+      } else if (Array.isArray(result)) {
+        questions = result;
       }
       
-      // Fetch parsed questions
-      const response = await uploadApi.getParsedQuestions(paperId, parseId);
-      
-      // Handle different response formats
-      let questions: any[] = [];
-      if (Array.isArray(response)) {
-        questions = response;
-      } else if (response && Array.isArray(response.questions)) {
-        questions = response.questions;
-      } else if (response && typeof response === 'object') {
-        // If response is an object but not an array, it might be an error message
-        questions = [];
+      // If no questions in parsePDF response, try fetching from getParsedQuestions
+      if (questions.length === 0) {
+        const response = await uploadApi.getParsedQuestions(paperId, parseId);
+        
+        // Handle different response formats from getParsedQuestions
+        if (Array.isArray(response)) {
+          questions = response;
+        } else if (response && Array.isArray(response.parsed_data)) {
+          questions = response.parsed_data;
+        } else if (response && Array.isArray(response.questions)) {
+          questions = response.questions;
+        } else if (response && typeof response === 'object') {
+          questions = [];
+        }
       }
       
       // Ensure questions is always an array
@@ -106,9 +115,11 @@ export default function PaperUploadPage() {
         setParsedQuestions(questions);
       }
       setReviewing(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to parse PDF:", error);
-      alert("Failed to parse PDF. You can still manually add questions.");
+      const errorMessage = error?.response?.data?.error || error?.message || "Unknown error";
+      console.error("Error details:", errorMessage);
+      alert(`Failed to parse PDF: ${errorMessage}. You can still manually add questions.`);
       // Allow manual entry even if parsing fails
       setParsedQuestions([{
         question_text: "",

@@ -31,10 +31,6 @@ export default function ExamDetailPage() {
         papersApi.getByExam(examId),
       ]);
       
-      console.log('Exam data:', examData);
-      console.log('Papers data:', papersData);
-      console.log('Number of papers:', papersData?.length);
-      
       setExam(examData);
       
       // Fetch question counts for each paper if not included
@@ -43,14 +39,11 @@ export default function ExamDetailPage() {
           try {
             // If questions_count is already included, use it
             if (paper.questions_count !== undefined && paper.questions_count !== null) {
-              console.log(`Paper ${paper.id} (${paper.title}) already has count:`, paper.questions_count);
               return paper;
             }
             // Otherwise, fetch questions to count them
-            console.log(`Fetching questions for paper ${paper.id} (${paper.title})...`);
             const questions = await questionsApi.getByPaper(paper.id);
             const count = questions?.length || 0;
-            console.log(`Paper ${paper.id} (${paper.title}) has ${count} questions`);
             return {
               ...paper,
               questions_count: count,
@@ -65,7 +58,6 @@ export default function ExamDetailPage() {
         })
       );
       
-      console.log('Papers with counts:', papersWithCounts);
       setPapers(papersWithCounts);
     } catch (error) {
       console.error("Failed to fetch data:", error);
